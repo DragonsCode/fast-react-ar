@@ -1,0 +1,101 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+
+.container {
+    width: 100vw;
+    height: 100vh; /* Обязательно */
+    display: flex;
+    overflow: hidden;
+}
+
+.model-wrapper {
+    position: relative;
+    /* Для мобилок обязательно flex: 1 или явная высота */
+    flex: 1; 
+    height: 100%;
+    background-color: #eee; /* Серый фон, чтобы видеть область */
+}
+
+.error-screen, .loading-screen {
+    display: flex; justify-content: center; align-items: center; height: 100vh; font-size: 1.2rem;
+}
+
+/* Стили для model-viewer */
+model-viewer {
+    width: 100%;
+    height: 100%;
+    background-color: #f5f5f5;
+    --poster-color: transparent;
+}
+
+/* ДЕСКТОП */
+.desktop .model-wrapper {
+    flex: 2; /* 2/3 экрана */
+    border-right: 1px solid #ddd;
+}
+
+.desktop .sidebar {
+    flex: 1; /* 1/3 экрана */
+    background: white;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    text-align: center;
+}
+
+.qr-box {
+    padding: 15px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    margin: 20px 0;
+}
+
+.link-text { word-break: break-all; font-size: 0.8rem; color: #888; margin-top: 10px; }
+
+/* МОБИЛКИ */
+.mobile { flex-direction: column; }
+
+.mobile .model-wrapper {
+    flex: 1; /* Занимает все пространство */
+    position: relative;
+}
+
+.mobile-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: white;
+    padding: 20px;
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    box-shadow: 0 -5px 20px rgba(0,0,0,0.1);
+    z-index: 10;
+}
+
+.mobile-controls h3 { text-align: center; margin-bottom: 15px; }
+
+.buttons-row { display: flex; gap: 10px; }
+
+.btn {
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn span { font-size: 0.7rem; font-weight: normal; margin-top: 4px; opacity: 0.8; }
+
+.btn-primary { background-color: #007bff; color: white; }
+.btn-secondary { background-color: #e9ecef; color: #333; }
