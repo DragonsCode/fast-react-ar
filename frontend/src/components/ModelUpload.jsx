@@ -85,7 +85,7 @@ export default function ModelUpload() {
       formDataToSend.append('glb_file', formData.glb_file);
       formDataToSend.append('usdz_file', formData.usdz_file);
 
-      const response = await fetch('http://localhost:8000/api/upload', {
+      const response = await fetch('https://apiar.dragonscode.uz/api/upload', {
         method: 'POST',
         body: formDataToSend,
       });
