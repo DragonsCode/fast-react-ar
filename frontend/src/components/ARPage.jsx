@@ -5,7 +5,7 @@ import '@google/model-viewer';
 import './ARPage.css';
 
 // Ссылка на бэкенд
-const API_BASE = "https://elidible-ralline-conor.ngrok-free.dev"; 
+const API_BASE = "https://apiar.dragonscode.uz"; 
 
 const ARPage = () => {
   const { id } = useParams();

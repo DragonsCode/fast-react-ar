@@ -21,7 +21,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # === НАСТРОЙКИ ===
 # Сюда вставьте ваш текущий домен Ngrok (без слеша в конце)
 # Если используете локально, оставьте http://localhost:8000
-BASE_URL = "https://elidible-ralline-conor.ngrok-free.dev" 
+BASE_URL = "https://apiar.dragonscode.uz" 
 
 # База данных
 models_db = {
@@ -43,6 +43,17 @@ models_db = {
         "src": "https://modelviewer.dev/shared-assets/models/Astronaut.glb",
         "ios_src": "https://modelviewer.dev/shared-assets/models/Astronaut.usdz"
     },
+    "stool": {
+        "title": "Тестовый Табурет",
+        # Эта ссылка 100% рабочая и разрешает CORS
+        "src": "https://modelviewer.dev/assets/ShopifyModels/Chair.glb",
+        "ios_src": "https://modelviewer.dev/assets/ShopifyModels/Chair.glb"
+    },
+    "niel": {
+        "title": "Тестовый Нильс",
+        # Эта ссылка 100% рабочая и разрешает CORS
+        "src": "https://modelviewer.dev/shared-assets/models/NeilArmstrong.glb",
+        "ios_src": "https://modelviewer.dev/shared-assets/models/NeilArmstrong.glb"}
 }
 
 class ARResponse(BaseModel):
