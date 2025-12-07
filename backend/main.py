@@ -10,6 +10,7 @@ from pathlib import Path
 
 app = FastAPI()
 
+# Primary CORS middleware (usual case)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -17,6 +18,59 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# HTTP middleware to ensure CORS headers are present even on error responses
+@app.middleware("http")
+async def ensure_cors_header(request, call_next):
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        # If an exception occurs while handling the request, build a response
+        # with a helpful message and ensure CORS headers are present.
+        from fastapi.responses import JSONResponse
+        status_code = getattr(exc, 'status_code', 500)
+        detail = getattr(exc, 'detail', str(exc))
+        body = {"detail": detail}
+        resp = JSONResponse(status_code=status_code, content=body)
+        resp.headers.setdefault('Access-Control-Allow-Origin', '*')
+        resp.headers.setdefault('Access-Control-Allow-Methods', '*')
+        resp.headers.setdefault('Access-Control-Allow-Headers', '*')
+        return resp
+
+    # Ensure CORS headers are present on normal responses too (covers cases
+    # where some upstream component or exception may have removed them).
+    response.headers.setdefault('Access-Control-Allow-Origin', '*')
+    response.headers.setdefault('Access-Control-Allow-Methods', '*')
+    response.headers.setdefault('Access-Control-Allow-Headers', '*')
+    return response
+
+
+# ASGI-level wrapper — defensive: if a lower-level server (proxy) returns
+# an early response, this wrapper will try to inject CORS headers when the
+# response start event occurs. This is a best-effort fallback.
+class EnsureCorsASGIMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        async def send_wrapper(message):
+            if message.get('type') == 'http.response.start':
+                headers = list(message.get('headers', []))
+                # header names and values must be bytes
+                header_names = [h[0].lower() for h in headers]
+                if b'access-control-allow-origin' not in header_names:
+                    headers.append((b'access-control-allow-origin', b'*'))
+                    headers.append((b'access-control-allow-methods', b'*'))
+                    headers.append((b'access-control-allow-headers', b'*'))
+                    message['headers'] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+# Wrap the FastAPI ASGI app with the ASGI-level middleware as a final
+# defensive layer.
+app = EnsureCorsASGIMiddleware(app)
 
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -45,6 +99,9 @@ def validate_model_file(filename: str, content: bytes) -> bool:
         # USDZ files are ZIP archives, start with 'PK'
         return content[:2] == b'PK'
     return False
+
+# Maximum allowed upload size in bytes (50 MB default). Adjust as needed.
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 
 # === НАСТРОЙКИ ===
 # Сюда вставьте ваш текущий домен Ngrok (без слеша в конце)
@@ -148,9 +205,13 @@ async def upload_model(
         if not title or len(title.strip()) == 0:
             raise HTTPException(status_code=400, detail="Title cannot be empty")
         
-        # Read file contents for validation
+        # Read file contents for validation (and enforce server-side size limit)
         glb_content = await glb_file.read()
         usdz_content = await usdz_file.read()
+
+        total_size = len(glb_content) + len(usdz_content)
+        if total_size > MAX_UPLOAD_SIZE:
+            raise HTTPException(status_code=413, detail=f"Uploaded files exceed maximum allowed size ({MAX_UPLOAD_SIZE} bytes)")
         
         # Validate file contents
         if not validate_model_file(glb_file.filename, glb_content):
