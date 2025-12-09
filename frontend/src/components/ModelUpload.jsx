@@ -1,5 +1,16 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import './ModelUpload.css';
+
+const Toast = ({ message, type, onClose }) => (
+  <div className={`toast toast-${type}`}>
+    <span className="toast-icon">
+      {type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ'}
+    </span>
+    <span>{message}</span>
+    <button onClick={onClose} className="toast-close">×</button>
+  </div>
+);
 
 export default function ModelUpload() {
   const [formData, setFormData] = useState({
@@ -10,9 +21,14 @@ export default function ModelUpload() {
   });
 
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState(''); // 'success' or 'error'
+  const [toast, setToast] = useState(null);
   const [uploadedModel, setUploadedModel] = useState(null);
+  const [dragStates, setDragStates] = useState({ glb: false, usdz: false });
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000);
+  };
 
   const generateModelId = () => {
     const randomId = Math.random().toString(36).substring(2, 10);
@@ -31,49 +47,62 @@ export default function ModelUpload() {
     }
   };
 
+  const handleDrop = (e, fileType) => {
+    e.preventDefault();
+    setDragStates(prev => ({ ...prev, [fileType]: false }));
+    
+    const files = e.dataTransfer.files;
+    if (files && files[0]) {
+      const file = files[0];
+      const expectedExt = fileType === 'glb' ? '.glb' : '.usdz';
+      
+      if (file.name.endsWith(expectedExt)) {
+        const fieldName = fileType === 'glb' ? 'glb_file' : 'usdz_file';
+        setFormData(prev => ({ ...prev, [fieldName]: file }));
+      } else {
+        showToast(`Please drop a ${expectedExt} file`, 'error');
+      }
+    }
+  };
+
+  const handleDragOver = (e, fileType) => {
+    e.preventDefault();
+    setDragStates(prev => ({ ...prev, [fileType]: true }));
+  };
+
+  const handleDragLeave = (fileType) => {
+    setDragStates(prev => ({ ...prev, [fileType]: false }));
+  };
+
   const validateForm = () => {
     if (!formData.title.trim()) {
-      setMessage('Title is required');
-      setMessageType('error');
+      showToast('Title is required', 'error');
       return false;
     }
-
     if (!formData.glb_file) {
-      setMessage('GLB model file is required');
-      setMessageType('error');
+      showToast('GLB model file is required', 'error');
       return false;
     }
-
     if (!formData.usdz_file) {
-      setMessage('USDZ model file is required');
-      setMessageType('error');
+      showToast('USDZ model file is required', 'error');
       return false;
     }
-
     if (!formData.glb_file.name.endsWith('.glb')) {
-      setMessage('GLB file must have .glb extension');
-      setMessageType('error');
+      showToast('GLB file must have .glb extension', 'error');
       return false;
     }
-
     if (!formData.usdz_file.name.endsWith('.usdz')) {
-      setMessage('USDZ file must have .usdz extension');
-      setMessageType('error');
+      showToast('USDZ file must have .usdz extension', 'error');
       return false;
     }
-
     return true;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     setLoading(true);
-    setMessage('');
     setUploadedModel(null);
 
     try {
@@ -93,16 +122,12 @@ export default function ModelUpload() {
       const data = await response.json();
 
       if (!response.ok) {
-        setMessage(data.detail || 'Upload failed');
-        setMessageType('error');
+        showToast(data.detail || 'Upload failed', 'error');
         return;
       }
 
-      setMessage(data.message);
-      setMessageType('success');
+      showToast('Model uploaded successfully!', 'success');
       setUploadedModel(data.model);
-      
-      // Reset form
       setFormData({
         title: '',
         model_id: '',
@@ -110,111 +135,192 @@ export default function ModelUpload() {
         usdz_file: null,
       });
     } catch (error) {
-      setMessage(`Error: ${error.message}`);
-      setMessageType('error');
+      showToast(`Error: ${error.message}`, 'error');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="model-upload-container">
-      <h1>Upload 3D Model</h1>
+    <div className="upload-page">
+      <div className="upload-background"></div>
+      
+      {toast && (
+        <Toast 
+          message={toast.message} 
+          type={toast.type} 
+          onClose={() => setToast(null)} 
+        />
+      )}
 
-      <form onSubmit={handleSubmit} className="upload-form">
-        <div className="form-group">
-          <label htmlFor="title">Model Title *</label>
-          <input
-            type="text"
-            id="title"
-            name="title"
-            value={formData.title}
-            onChange={handleInputChange}
-            placeholder="e.g., My Awesome Model"
-            required
-          />
+      <div className="upload-container animate-fade-in">
+        <Link to="/models" className="back-link">
+          <span>←</span> Back to Models
+        </Link>
+
+        <div className="upload-header">
+          <div className="header-icon">
+            <span>📦</span>
+          </div>
+          <h1>Upload 3D Model</h1>
+          <p>Add your GLB and USDZ files for AR viewing</p>
         </div>
 
-        <div className="form-group">
-          <label htmlFor="model_id">Model ID (optional)</label>
-          <div className="id-input-group">
+        <form onSubmit={handleSubmit} className="upload-form glass-card">
+          <div className="form-group">
+            <label htmlFor="title">
+              <span className="label-icon">📝</span>
+              Model Title
+            </label>
             <input
               type="text"
-              id="model_id"
-              name="model_id"
-              value={formData.model_id}
+              id="title"
+              name="title"
+              value={formData.title}
               onChange={handleInputChange}
-              placeholder="Auto-generated if left empty"
+              placeholder="e.g., My Awesome 3D Model"
+              className="input-field"
             />
-            <button
-              type="button"
-              onClick={generateModelId}
-              className="generate-btn"
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="model_id">
+              <span className="label-icon">🔑</span>
+              Model ID <span className="optional">(optional)</span>
+            </label>
+            <div className="id-input-group">
+              <input
+                type="text"
+                id="model_id"
+                name="model_id"
+                value={formData.model_id}
+                onChange={handleInputChange}
+                placeholder="Auto-generated if empty"
+                className="input-field"
+              />
+              <button
+                type="button"
+                onClick={generateModelId}
+                className="generate-btn"
+              >
+                Generate
+              </button>
+            </div>
+          </div>
+
+          <div className="files-grid">
+            <div 
+              className={`file-drop-zone ${dragStates.glb ? 'drag-over' : ''} ${formData.glb_file ? 'has-file' : ''}`}
+              onDrop={(e) => handleDrop(e, 'glb')}
+              onDragOver={(e) => handleDragOver(e, 'glb')}
+              onDragLeave={() => handleDragLeave('glb')}
             >
-              Generate
-            </button>
+              <input
+                type="file"
+                id="glb_file"
+                name="glb_file"
+                accept=".glb"
+                onChange={handleFileChange}
+                className="file-input"
+              />
+              <label htmlFor="glb_file" className="file-label">
+                <div className="file-icon">🎮</div>
+                <div className="file-info">
+                  <span className="file-type">GLB File</span>
+                  <span className="file-platform">Android / Web</span>
+                </div>
+                {formData.glb_file ? (
+                  <div className="file-selected">
+                    <span className="check">✓</span>
+                    <span className="filename">{formData.glb_file.name}</span>
+                  </div>
+                ) : (
+                  <span className="file-hint">Drop file or click to browse</span>
+                )}
+              </label>
+            </div>
+
+            <div 
+              className={`file-drop-zone ${dragStates.usdz ? 'drag-over' : ''} ${formData.usdz_file ? 'has-file' : ''}`}
+              onDrop={(e) => handleDrop(e, 'usdz')}
+              onDragOver={(e) => handleDragOver(e, 'usdz')}
+              onDragLeave={() => handleDragLeave('usdz')}
+            >
+              <input
+                type="file"
+                id="usdz_file"
+                name="usdz_file"
+                accept=".usdz"
+                onChange={handleFileChange}
+                className="file-input"
+              />
+              <label htmlFor="usdz_file" className="file-label">
+                <div className="file-icon">🍎</div>
+                <div className="file-info">
+                  <span className="file-type">USDZ File</span>
+                  <span className="file-platform">iOS / macOS</span>
+                </div>
+                {formData.usdz_file ? (
+                  <div className="file-selected">
+                    <span className="check">✓</span>
+                    <span className="filename">{formData.usdz_file.name}</span>
+                  </div>
+                ) : (
+                  <span className="file-hint">Drop file or click to browse</span>
+                )}
+              </label>
+            </div>
           </div>
-        </div>
 
-        <div className="form-group">
-          <label htmlFor="glb_file">GLB Model File *</label>
-          <input
-            type="file"
-            id="glb_file"
-            name="glb_file"
-            accept=".glb"
-            onChange={handleFileChange}
-            required
-          />
-          {formData.glb_file && (
-            <span className="file-name">
-              ✓ {formData.glb_file.name}
-            </span>
-          )}
-        </div>
+          <button
+            type="submit"
+            className="submit-btn"
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <span className="spinner"></span>
+                Uploading...
+              </>
+            ) : (
+              <>
+                <span>🚀</span>
+                Upload Model
+              </>
+            )}
+          </button>
+        </form>
 
-        <div className="form-group">
-          <label htmlFor="usdz_file">USDZ Model File (iOS) *</label>
-          <input
-            type="file"
-            id="usdz_file"
-            name="usdz_file"
-            accept=".usdz"
-            onChange={handleFileChange}
-            required
-          />
-          {formData.usdz_file && (
-            <span className="file-name">
-              ✓ {formData.usdz_file.name}
-            </span>
-          )}
-        </div>
-
-        <button
-          type="submit"
-          className="submit-btn"
-          disabled={loading}
-        >
-          {loading ? 'Uploading...' : 'Upload Model'}
-        </button>
-      </form>
-
-      {message && (
-        <div className={`message ${messageType}`}>
-          {message}
-        </div>
-      )}
-
-      {uploadedModel && (
-        <div className="success-info">
-          <h2>Upload Successful! 🎉</h2>
-          <div className="model-details">
-            <p><strong>Title:</strong> {uploadedModel.title}</p>
-            <p><strong>GLB URL:</strong> <a href={uploadedModel.src} target="_blank" rel="noopener noreferrer">{uploadedModel.src}</a></p>
-            <p><strong>USDZ URL:</strong> <a href={uploadedModel.ios_src} target="_blank" rel="noopener noreferrer">{uploadedModel.ios_src}</a></p>
+        {uploadedModel && (
+          <div className="success-card glass-card animate-scale-in">
+            <div className="success-header">
+              <span className="success-icon">🎉</span>
+              <h2>Upload Successful!</h2>
+            </div>
+            <div className="model-details">
+              <div className="detail-row">
+                <span className="detail-label">Title</span>
+                <span className="detail-value">{uploadedModel.title}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">GLB URL</span>
+                <a href={uploadedModel.src} target="_blank" rel="noopener noreferrer" className="detail-link">
+                  {uploadedModel.src}
+                </a>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">USDZ URL</span>
+                <a href={uploadedModel.ios_src} target="_blank" rel="noopener noreferrer" className="detail-link">
+                  {uploadedModel.ios_src}
+                </a>
+              </div>
+            </div>
+            <Link to={`/view/${uploadedModel.id || formData.model_id}`} className="view-model-btn">
+              View in AR →
+            </Link>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

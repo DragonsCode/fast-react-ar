@@ -8,11 +8,11 @@ function App() {
   return (
     <Router>
       <Routes>
+        <Route path="/" element={<ModelsList />} />
         <Route path="/view/:id" element={<ARPage />} />
         <Route path="/upload" element={<ModelUpload />} />
         <Route path="/models" element={<ModelsList />} />
-        <Route path="/" element={<ModelsList />} />
-        <Route path="*" element={<div>404 - Страница не найдена. Попробуйте /view/christmas</div>} />
+        <Route path="*" element={<div>404 - Страница не найдена. Попробуйте /view/local</div>} />
       </Routes>
     </Router>
   );
