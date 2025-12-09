@@ -114,6 +114,30 @@ async def get_model(item_id: str):
         "ios_src": ios_src  # Отдаем готовую полную ссылку
     }
 
+@app.get("/api/models")
+async def list_models():
+    """Get list of all available models with their full URLs"""
+    models_list = []
+    for model_id, item in models_db.items():
+        src = item['src']
+        ios_src = item['ios_src']
+        
+        # Generate full URLs for local files
+        if not src.startswith("http"):
+            src = f"{BASE_URL}/static/{src}"
+        
+        if not ios_src.startswith("http"):
+            ios_src = f"{BASE_URL}/static/{ios_src}"
+        
+        models_list.append({
+            "id": model_id,
+            "title": item["title"],
+            "src": src,
+            "ios_src": ios_src
+        })
+    
+    return {"models": models_list, "count": len(models_list)}
+
 class UploadResponse(BaseModel):
     success: bool
     message: str
