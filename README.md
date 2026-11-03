@@ -51,7 +51,7 @@ python -m compileall -q backend
 
 The regression suite uses temporary directories and synthetic files only. It covers traversal and absolute paths, size limits, existing files/symlinks, rollback, safe error responses and the successful upload/read contract. GitHub Actions runs these checks on Python 3.12.
 
-Runtime dependencies are pinned in `backend/requirements.txt`; their direct inputs are in `backend/requirements.in`. Regenerate deliberately with `uv pip compile --python-version 3.12 backend/requirements.in --output-file backend/requirements.txt` and rerun the suite after upgrades.
+Runtime dependencies are pinned in `backend/requirements.txt`; their direct inputs are in `backend/requirements.in`. Regenerate deliberately with `uv pip compile --upgrade --python-version 3.12 backend/requirements.in --output-file backend/requirements.txt`, then `uv pip compile --python-version 3.12 backend/requirements-dev.in --output-file backend/requirements-dev.txt`. Both output files include their complete transitive dependency sets. Recreate a clean environment and rerun the suite after upgrades; do not use `uv pip sync` on the uncompiled `.in` files.
 
 ## License
 
