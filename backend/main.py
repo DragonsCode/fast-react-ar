@@ -1,12 +1,23 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import uvicorn
-import os
-import uuid
 import json
+import logging
+import os
+import re
+import tempfile
+import uuid
 from pathlib import Path
+from typing import Annotated
+
+import uvicorn
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+MAX_MODEL_BYTES = int(os.environ.get("MAX_MODEL_BYTES", str(25 * 1024 * 1024)))
+if MAX_MODEL_BYTES <= 0:
+    raise ValueError("MAX_MODEL_BYTES must be positive")
+MODEL_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 app = FastAPI()
 
@@ -27,14 +38,39 @@ MODELS_DB_FILE = "models_db.json"
 def load_models_db():
     """Load models from JSON file"""
     if os.path.exists(MODELS_DB_FILE):
-        with open(MODELS_DB_FILE, 'r') as f:
+        with open(MODELS_DB_FILE) as f:
             return json.load(f)
     return {}
 
 def save_models_db(db):
-    """Save models to JSON file"""
-    with open(MODELS_DB_FILE, 'w') as f:
-        json.dump(db, f, indent=2)
+    """Replace the single-worker registry without truncating it on write failure."""
+    destination = Path(MODELS_DB_FILE)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=destination.parent,
+            prefix=f".{destination.name}.", suffix=".tmp", delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            json.dump(db, stream, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+async def read_model_file(upload):
+    """Bound memory even when a client omits or lies about its content length."""
+    content = bytearray()
+    while True:
+        chunk = await upload.read(min(64 * 1024, MAX_MODEL_BYTES + 1 - len(content)))
+        if not chunk:
+            return bytes(content)
+        content.extend(chunk)
+        if len(content) > MAX_MODEL_BYTES:
+            raise HTTPException(status_code=413, detail="Model file exceeds the configured size limit")
 
 def validate_model_file(filename: str, content: bytes) -> bool:
     """Validate if file is a valid 3D model"""
@@ -141,15 +177,15 @@ async def list_models():
 class UploadResponse(BaseModel):
     success: bool
     message: str
-    model_id: str = None
-    model: ARResponse = None
+    model_id: str | None = None
+    model: ARResponse | None = None
 
 @app.post("/api/upload", response_model=UploadResponse)
 async def upload_model(
-    glb_file: UploadFile = File(...),
-    usdz_file: UploadFile = File(...),
-    title: str = Form(...),
-    model_id: str = Form(default=None)
+    glb_file: Annotated[UploadFile, File()],
+    usdz_file: Annotated[UploadFile, File()],
+    title: Annotated[str, Form()],
+    model_id: Annotated[str | None, Form()] = None,
 ):
     """
     Upload a custom 3D model with both GLB and USDZ formats.
@@ -160,12 +196,19 @@ async def upload_model(
         title: Model title/name (required)
         model_id: Custom unique identifier, or auto-generated if not provided
     """
+    if model_id is None or model_id == "":
+        model_id = uuid.uuid4().hex[:8]
+    if MODEL_ID_PATTERN.fullmatch(model_id) is None:
+        raise HTTPException(status_code=400, detail="Model ID must contain 1–64 letters, digits, underscores or hyphens")
+    if model_id in models_db:
+        raise HTTPException(status_code=400, detail="Model ID already exists")
+    created_paths = []
     try:
         # Validate file extensions
-        if not glb_file.filename.endswith('.glb'):
+        if not (glb_file.filename or "").endswith('.glb'):
             raise HTTPException(status_code=400, detail="GLB file must have .glb extension")
         
-        if not usdz_file.filename.endswith('.usdz'):
+        if not (usdz_file.filename or "").endswith('.usdz'):
             raise HTTPException(status_code=400, detail="USDZ file must have .usdz extension")
         
         # Validate title
@@ -173,8 +216,8 @@ async def upload_model(
             raise HTTPException(status_code=400, detail="Title cannot be empty")
         
         # Read file contents for validation
-        glb_content = await glb_file.read()
-        usdz_content = await usdz_file.read()
+        glb_content = await read_model_file(glb_file)
+        usdz_content = await read_model_file(usdz_file)
         
         # Validate file contents
         if not validate_model_file(glb_file.filename, glb_content):
@@ -183,13 +226,9 @@ async def upload_model(
         if not validate_model_file(usdz_file.filename, usdz_content):
             raise HTTPException(status_code=400, detail="Invalid USDZ file format")
         
-        # Generate or validate model ID
-        if not model_id:
-            model_id = str(uuid.uuid4())[:8]  # Generate 8-character unique ID
-        
-        # Check if model_id already exists
+        # Another upload may have completed while file reads yielded control.
         if model_id in models_db:
-            raise HTTPException(status_code=400, detail=f"Model with ID '{model_id}' already exists")
+            raise HTTPException(status_code=400, detail="Model ID already exists")
         
         # Generate file names with model_id
         glb_filename = f"{model_id}.glb"
@@ -199,21 +238,22 @@ async def upload_model(
         glb_path = Path("static") / glb_filename
         usdz_path = Path("static") / usdz_filename
         
-        with open(glb_path, 'wb') as f:
-            f.write(glb_content)
-        
-        with open(usdz_path, 'wb') as f:
-            f.write(usdz_content)
+        # Exclusive creation also refuses existing files and symbolic links.
+        for path, content in ((glb_path, glb_content), (usdz_path, usdz_content)):
+            with path.open('xb') as stream:
+                created_paths.append(path)
+                stream.write(content)
         
         # Add to models database
-        models_db[model_id] = {
+        item = {
             "title": title.strip(),
             "src": glb_filename,
             "ios_src": usdz_filename
         }
         
         # Save database to file
-        save_models_db(models_db)
+        save_models_db({**models_db, model_id: item})
+        models_db[model_id] = item
         
         # Build response with full URLs
         return {
@@ -227,10 +267,21 @@ async def upload_model(
             }
         }
     
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+    except BaseException as exc:
+        # Only remove assets created by this attempt, never pre-existing files.
+        for path in created_paths:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.exception("Could not clean up an incomplete upload")
+        if isinstance(exc, HTTPException):
+            raise
+        if isinstance(exc, FileExistsError):
+            raise HTTPException(status_code=409, detail="Model asset already exists") from None
+        if not isinstance(exc, Exception):
+            raise
+        logger.exception("Model upload failed")
+        raise HTTPException(status_code=500, detail="Upload could not be saved") from None
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8001)

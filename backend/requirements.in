@@ -1,0 +1,4 @@
+# Runtime dependencies; regenerate requirements.txt with uv pip compile.
+fastapi==0.162.0
+uvicorn==0.38.0
+python-multipart==0.0.33

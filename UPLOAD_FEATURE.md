@@ -20,7 +20,7 @@ A complete implementation of custom 3D model upload functionality for the Fast R
 - **`validate_model_file(filename, content)`** - Validates file format by checking file signatures:
   - **GLB files**: Must start with `glTF` magic number (bytes)
   - **USDZ files**: Must start with `PK` (ZIP archive signature)
-  - Prevents invalid/corrupted files from being uploaded
+  - Checks only leading signatures; does not prove complete format validity or safety
 
 ### Upload Endpoint
 **Endpoint:** `POST /api/upload`
@@ -179,3 +179,7 @@ frontend/
 - Consider adding authentication/authorization
 - CORS enabled (already in place)
 - Input sanitization for titles
+
+## Security and persistence limits
+
+See [README](README.md#upload-boundaries) for identifier restrictions, file limits, HTTP 409/413 responses, rollback, single-worker storage and the authentication/request-limit requirements before public deployment. Existing model files are never overwritten by upload.
